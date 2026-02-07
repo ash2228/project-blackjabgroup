@@ -1,0 +1,478 @@
+{% doc %}
+  @prompt
+    Create a smart delivery note input section for product pages that only appears when cart total exceeds INR 999. Include a text input field with 120 character limit, live character counter showing remaining characters, and save the note to cart attributes. The input should be accessible, mobile-friendly, and styled to match Dawn theme. Use JavaScript to check cart total and toggle visibility, persist the delivery note value across page loads, and ensure the note is visible in cart and accessible in order admin through cart attributes.
+{% enddoc %}
+{% assign ai_gen_id = block.id | replace: '_', '' | downcase %}
+
+{% style %}
+  .ai-delivery-note-container-{{ ai_gen_id }} {
+    display: none;
+    width: 100%;
+    margin-top: 20px;
+    padding: 20px;
+    background-color: {{ block.settings.background_color }};
+    border: {{ block.settings.border_thickness }}px solid rgba(18, 18, 18, {{ block.settings.border_opacity | divided_by: 100.0 }});
+    border-radius: {{ block.settings.border_radius }}px;
+  }
+
+  .ai-delivery-note-container-{{ ai_gen_id }}.visible {
+    display: block;
+  }
+
+  .ai-delivery-note-heading-{{ ai_gen_id }} {
+    margin: 0 0 12px 0;
+    font-size: {{ block.settings.heading_size }}px;
+    font-weight: 600;
+    color: {{ block.settings.text_color }};
+  }
+
+  .ai-delivery-note-description-{{ ai_gen_id }} {
+    margin: 0 0 16px 0;
+    font-size: {{ block.settings.description_size }}px;
+    color: {{ block.settings.text_color }};
+    opacity: 0.8;
+  }
+
+  .ai-delivery-note-field-wrapper-{{ ai_gen_id }} {
+    position: relative;
+  }
+
+  .ai-delivery-note-input-{{ ai_gen_id }} {
+    width: 100%;
+    padding: 12px 16px;
+    font-size: 14px;
+    border: {{ block.settings.input_border_thickness }}px solid rgba(18, 18, 18, {{ block.settings.input_border_opacity | divided_by: 100.0 }});
+    border-radius: {{ block.settings.input_border_radius }}px;
+    background-color: {{ block.settings.input_background_color }};
+    color: {{ block.settings.text_color }};
+    resize: vertical;
+    min-height: 80px;
+    font-family: inherit;
+  }
+
+  .ai-delivery-note-input-{{ ai_gen_id }}:focus {
+    outline: 2px solid {{ block.settings.focus_color }};
+    outline-offset: 2px;
+    border-color: {{ block.settings.focus_color }};
+  }
+
+  .ai-delivery-note-counter-{{ ai_gen_id }} {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+    font-size: 12px;
+    color: {{ block.settings.text_color }};
+    opacity: 0.7;
+  }
+
+  .ai-delivery-note-counter-text-{{ ai_gen_id }} {
+    font-weight: 500;
+  }
+
+  .ai-delivery-note-counter-text-{{ ai_gen_id }}.warning {
+    color: {{ block.settings.warning_color }};
+    opacity: 1;
+  }
+
+  .ai-delivery-note-threshold-message-{{ ai_gen_id }} {
+    display: none;
+    margin-top: 12px;
+    padding: 12px 16px;
+    background-color: {{ block.settings.info_background_color }};
+    border-left: 3px solid {{ block.settings.info_border_color }};
+    border-radius: 4px;
+    font-size: 13px;
+    color: {{ block.settings.text_color }};
+  }
+
+  .ai-delivery-note-threshold-message-{{ ai_gen_id }}.visible {
+    display: block;
+  }
+
+  @media screen and (max-width: 749px) {
+    .ai-delivery-note-container-{{ ai_gen_id }} {
+      padding: 16px;
+      margin-top: 16px;
+    }
+
+    .ai-delivery-note-heading-{{ ai_gen_id }} {
+      font-size: calc({{ block.settings.heading_size }}px * 0.9);
+    }
+
+    .ai-delivery-note-description-{{ ai_gen_id }} {
+      font-size: calc({{ block.settings.description_size }}px * 0.9);
+    }
+  }
+{% endstyle %}
+
+<delivery-note-{{ ai_gen_id }}
+  class="ai-delivery-note-container-{{ ai_gen_id }}"
+  data-threshold="{{ block.settings.cart_threshold }}"
+  {{ block.shopify_attributes }}
+>
+  <h3 class="ai-delivery-note-heading-{{ ai_gen_id }}">
+    {{ block.settings.heading }}
+  </h3>
+
+  {% if block.settings.description != blank %}
+    <p class="ai-delivery-note-description-{{ ai_gen_id }}">
+      {{ block.settings.description }}
+    </p>
+  {% endif %}
+
+  <div class="ai-delivery-note-field-wrapper-{{ ai_gen_id }}">
+    <textarea
+      id="ai-delivery-note-input-{{ ai_gen_id }}"
+      class="ai-delivery-note-input-{{ ai_gen_id }}"
+      name="attributes[{{ block.settings.attribute_name }}]"
+      maxlength="120"
+      placeholder="{{ block.settings.placeholder }}"
+      aria-label="{{ block.settings.heading }}"
+      aria-describedby="ai-delivery-note-counter-{{ ai_gen_id }}"
+    ></textarea>
+
+    <div
+      id="ai-delivery-note-counter-{{ ai_gen_id }}"
+      class="ai-delivery-note-counter-{{ ai_gen_id }}"
+      aria-live="polite"
+    >
+      <span>{{ block.settings.counter_label }}</span>
+      <span class="ai-delivery-note-counter-text-{{ ai_gen_id }}">
+        <span class="ai-delivery-note-remaining-{{ ai_gen_id }}">120</span> / 120
+      </span>
+    </div>
+  </div>
+
+  <div
+    class="ai-delivery-note-threshold-message-{{ ai_gen_id }}"
+    role="status"
+    aria-live="polite"
+  >
+    {{ block.settings.threshold_message }}
+  </div>
+</delivery-note-{{ ai_gen_id }}>
+
+<script>
+  (function() {
+    class DeliveryNote{{ ai_gen_id }} extends HTMLElement {
+      constructor() {
+        super();
+        this.threshold = parseFloat(this.dataset.threshold) * 100;
+        this.textarea = this.querySelector('.ai-delivery-note-input-{{ ai_gen_id }}');
+        this.remainingSpan = this.querySelector('.ai-delivery-note-remaining-{{ ai_gen_id }}');
+        this.counterText = this.querySelector('.ai-delivery-note-counter-text-{{ ai_gen_id }}');
+        this.thresholdMessage = this.querySelector('.ai-delivery-note-threshold-message-{{ ai_gen_id }}');
+        this.attributeName = '{{ block.settings.attribute_name }}';
+      }
+
+      connectedCallback() {
+        this.loadSavedNote();
+        this.checkCartTotal();
+        this.setupEventListeners();
+        this.observeCartChanges();
+      }
+
+      setupEventListeners() {
+        this.textarea.addEventListener('input', () => {
+          this.updateCharacterCount();
+          this.saveNote();
+        });
+
+        this.textarea.addEventListener('blur', () => {
+          this.saveNote();
+        });
+      }
+
+      updateCharacterCount() {
+        const currentLength = this.textarea.value.length;
+        const remaining = 120 - currentLength;
+        this.remainingSpan.textContent = remaining;
+
+        if (remaining <= 20) {
+          this.counterText.classList.add('warning');
+        } else {
+          this.counterText.classList.remove('warning');
+        }
+      }
+
+      async checkCartTotal() {
+        try {
+          const response = await fetch('/cart.js');
+          const cart = await response.json();
+          const cartTotal = cart.total_price;
+
+          if (cartTotal >= this.threshold) {
+            this.classList.add('visible');
+            this.thresholdMessage.classList.add('visible');
+          } else {
+            this.classList.remove('visible');
+            this.thresholdMessage.classList.remove('visible');
+          }
+        } catch (error) {
+          console.error('Error fetching cart:', error);
+        }
+      }
+
+      async saveNote() {
+        const noteValue = this.textarea.value;
+
+        try {
+          const formData = new FormData();
+          formData.append('attributes[' + this.attributeName + ']', noteValue);
+
+          await fetch('/cart/update.js', {
+            method: 'POST',
+            body: formData
+          });
+
+          localStorage.setItem('delivery_note_{{ ai_gen_id }}', noteValue);
+        } catch (error) {
+          console.error('Error saving delivery note:', error);
+        }
+      }
+
+      async loadSavedNote() {
+        try {
+          const response = await fetch('/cart.js');
+          const cart = await response.json();
+          const savedNote = cart.attributes[this.attributeName];
+
+          if (savedNote) {
+            this.textarea.value = savedNote;
+          } else {
+            const localNote = localStorage.getItem('delivery_note_{{ ai_gen_id }}');
+            if (localNote) {
+              this.textarea.value = localNote;
+            }
+          }
+
+          this.updateCharacterCount();
+        } catch (error) {
+          console.error('Error loading delivery note:', error);
+        }
+      }
+
+      observeCartChanges() {
+        document.addEventListener('cart:updated', () => {
+          this.checkCartTotal();
+        });
+
+        const cartObserver = new MutationObserver(() => {
+          this.checkCartTotal();
+        });
+
+        const cartElements = document.querySelectorAll('[data-cart-count], .cart-count-bubble');
+        cartElements.forEach(element => {
+          cartObserver.observe(element, {
+            childList: true,
+            characterData: true,
+            subtree: true
+          });
+        });
+
+        setInterval(() => {
+          this.checkCartTotal();
+        }, 3000);
+      }
+    }
+
+    customElements.define('delivery-note-{{ ai_gen_id }}', DeliveryNote{{ ai_gen_id }});
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Delivery note",
+  "tag": null,
+  "settings": [
+    {
+      "type": "header",
+      "content": "Content"
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Add delivery instructions"
+    },
+    {
+      "type": "text",
+      "id": "description",
+      "label": "Description",
+      "default": "Available for orders over ₹999"
+    },
+    {
+      "type": "text",
+      "id": "placeholder",
+      "label": "Input placeholder",
+      "default": "E.g., Leave at the door, call before delivery..."
+    },
+    {
+      "type": "text",
+      "id": "counter_label",
+      "label": "Character counter label",
+      "default": "Characters remaining"
+    },
+    {
+      "type": "text",
+      "id": "threshold_message",
+      "label": "Threshold message",
+      "default": "Your order qualifies for delivery instructions!"
+    },
+    {
+      "type": "header",
+      "content": "Settings"
+    },
+    {
+      "type": "text",
+      "id": "cart_threshold",
+      "label": "Cart threshold amount",
+      "default": "999",
+      "info": "Enter amount in INR (e.g., 999 for ₹999)"
+    },
+    {
+      "type": "text",
+      "id": "attribute_name",
+      "label": "Cart attribute name",
+      "default": "Delivery Instructions",
+      "info": "This name will appear in order admin"
+    },
+    {
+      "type": "header",
+      "content": "Style"
+    },
+    {
+      "type": "range",
+      "id": "heading_size",
+      "min": 14,
+      "max": 24,
+      "step": 1,
+      "unit": "px",
+      "label": "Heading size",
+      "default": 18
+    },
+    {
+      "type": "range",
+      "id": "description_size",
+      "min": 12,
+      "max": 18,
+      "step": 1,
+      "unit": "px",
+      "label": "Description size",
+      "default": 14
+    },
+    {
+      "type": "color",
+      "id": "background_color",
+      "label": "Background",
+      "default": "#F3F3F3"
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Text",
+      "default": "#121212"
+    },
+    {
+      "type": "color",
+      "id": "input_background_color",
+      "label": "Input background",
+      "default": "#FFFFFF"
+    },
+    {
+      "type": "color",
+      "id": "focus_color",
+      "label": "Focus color",
+      "default": "#121212"
+    },
+    {
+      "type": "color",
+      "id": "warning_color",
+      "label": "Warning color",
+      "default": "#D82C0D"
+    },
+    {
+      "type": "color",
+      "id": "info_background_color",
+      "label": "Info message background",
+      "default": "#E8F5E9"
+    },
+    {
+      "type": "color",
+      "id": "info_border_color",
+      "label": "Info message border",
+      "default": "#4CAF50"
+    },
+    {
+      "type": "header",
+      "content": "Border"
+    },
+    {
+      "type": "range",
+      "id": "border_thickness",
+      "min": 0,
+      "max": 4,
+      "step": 1,
+      "unit": "px",
+      "label": "Container border thickness",
+      "default": 1
+    },
+    {
+      "type": "range",
+      "id": "border_opacity",
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "label": "Container border opacity",
+      "default": 10
+    },
+    {
+      "type": "range",
+      "id": "border_radius",
+      "min": 0,
+      "max": 20,
+      "step": 2,
+      "unit": "px",
+      "label": "Container border radius",
+      "default": 0
+    },
+    {
+      "type": "range",
+      "id": "input_border_thickness",
+      "min": 0,
+      "max": 4,
+      "step": 1,
+      "unit": "px",
+      "label": "Input border thickness",
+      "default": 1
+    },
+    {
+      "type": "range",
+      "id": "input_border_opacity",
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "label": "Input border opacity",
+      "default": 55
+    },
+    {
+      "type": "range",
+      "id": "input_border_radius",
+      "min": 0,
+      "max": 20,
+      "step": 2,
+      "unit": "px",
+      "label": "Input border radius",
+      "default": 0
+    }
+  ],
+  "presets": [
+    {
+      "name": "Delivery note"
+    }
+  ]
+}
+{% endschema %}

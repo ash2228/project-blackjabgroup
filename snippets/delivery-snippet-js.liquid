@@ -1,0 +1,91 @@
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const wrapper = document.getElementById('delivery-note-wrapper');
+    const textarea = document.getElementById('delivery-note');
+    const counter = document.getElementById('char-count');
+
+    if (!wrapper || !textarea || !counter) {
+      console.log('❌ Delivery note elements not found');
+      return;
+    }
+
+    console.log('✅ Delivery note script loaded');
+
+    const THRESHOLD = 99900;
+    let debounceTimer;
+
+    function updateVisibility(reason = '') {
+      console.log('🔄 Checking cart visibility', reason);
+
+      fetch('/cart.js')
+        .then((r) => r.json())
+        .then((cart) => {
+          const total = cart.total_price || 0;
+          console.log('💰 Cart total:', total);
+
+          if (total >= THRESHOLD) {
+            wrapper.classList.remove('hide');
+            console.log('👀 Delivery note shown');
+          } else {
+            wrapper.classList.add('hide');
+            console.log('🙈 Delivery note hidden');
+          }
+        })
+        .catch((err) => {
+          console.error('❌ cart.js failed', err);
+        });
+    }
+
+    // --- save note ---
+    textarea.addEventListener('input', () => {
+      counter.textContent = textarea.value.length;
+
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        fetch('/cart/update.js', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            attributes: { 'Delivery Note': textarea.value.trim() },
+          }),
+        });
+        console.log('📝 Delivery note saved');
+      }, 500);
+    });
+
+    // --- PRODUCT PAGE: Add to cart ---
+    document.addEventListener('submit', (e) => {
+      if (e.target.matches('form[action*="/cart/add"]')) {
+        console.log('🛒 Add to cart submitted');
+
+        // wait for Shopify to finish cart mutation
+        let attempts = 0;
+        const poll = setInterval(() => {
+          attempts++;
+
+          fetch('/cart.js')
+            .then((r) => r.json())
+            .then((cart) => {
+              console.log('🔎 Polling cart total:', cart.total_price);
+
+              if (cart.total_price >= 99900 || attempts >= 5) {
+                clearInterval(poll);
+                updateVisibility('after add (settled)');
+              }
+            });
+        }, 300);
+      }
+    });
+
+    // --- CART PAGE: Quantity change ---
+    {% comment %} document.addEventListener('change', (e) => {
+      if (e.target.matches('input.quantity__input')) {
+        console.log('➕➖ Quantity changed');
+        setTimeout(() => updateVisibility('after qty change'), 500);
+      }
+    }); {% endcomment %}
+
+    // initial load
+    updateVisibility('initial');
+  });
+</script>
